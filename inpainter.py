@@ -1,5 +1,5 @@
 from diffusers import StableDiffusionInpaintPipeline
-from typing import Optional
+from typing import Optional, Union
 from PIL import ImageOps
 from PIL import Image
 from torch import nn
@@ -316,14 +316,14 @@ class Inpainter(nn.Module):
         return image, depth
 
     @torch.no_grad()
-    def step(self, image: Image.Image, depth: np.array, prompt: Optional[str] = None):
+    def step(self, image: Image.Image, mask: Union[Image.Image, np.array], depth: np.array, prompt: Optional[str] = None):
         """
         Inpaint image and depth
         :param image: masked image (RGBA mode)
         :param depth: current depth
         :param prompt: prompt for demasking the image (optional)
         """
-        image, mask = image.convert("RGB"), image.split()[-1]
+        image, mask = image.convert("RGB"), Image.fromarray(np.asarray(mask)).convert("L")
         if prompt is not None:
             self.prompt = prompt
         else:
