@@ -24,7 +24,7 @@ starter = gr.Interface(fn=init, inputs=[
 def step(rgb, mask, depth, *args, **kwargs):
     if len(depth.shape) > 2:
         depth = depth[..., 0]
-    rgb, depth = inpainter.step(rgb.convert("RGB"), mask, depth / 1024, *args, **kwargs)
+    rgb, depth = inpainter.step(rgb.convert("RGB"), mask, depth / 1024., *args, **kwargs)
     return rgb, (depth.clip(0, 64) * 1024).astype("uint16")
 
 
