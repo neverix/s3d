@@ -29,9 +29,9 @@ def step(rgb, mask, depth, *args, **kwargs):
 
 
 inpaint = gr.Interface(fn=step, inputs=[
-    gr.inputs.Image(label="image", type="pil"),
-    gr.inputs.Image(label="mask", type="pil"),
-    gr.inputs.Image(label="depth", type="numpy"),
+    gr.inputs.Image(label="image", type="pil", shape=(512, 512)),
+    gr.inputs.Image(label="mask", type="pil", shape=(512, 512)),
+    gr.inputs.Image(label="depth", type="numpy", shape=(512, 512)),
     gr.inputs.Textbox(label="prompt"),
 ], outputs=[
     gr.components.Image(type="pil", label="image"),
