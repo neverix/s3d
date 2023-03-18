@@ -78,16 +78,17 @@ def b64enc(image):
     return result    
 
 
+# TODO async
 result = requests.post("http://127.0.0.1:7860/run/predict_1", json=dict(data=[
     b64enc(get_image("rgb")),
     b64enc(get_image("alpha")),
     b64enc(get_image("depth")),
     "A fantasy dungeon"
-])).json()
+]), timeout=400).json()
 #result = requests.post("http://127.0.0.1:7860/run/predict", json=dict(data=[
 #    b64enc(get_image("rgb")),
 #    "A grey cube"
-#])).json()x
+#]), timeout=400).json()
 rgb, depth = result["data"]
 (rgb, _), depth = b64dec(rgb), b64dec(depth)[-1][..., 0] * 64  # [..., 0].astype(np.float64)  # / 1024.
 mask = depth > 1e-4
