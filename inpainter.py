@@ -232,8 +232,8 @@ class MidasDepth(nn.Module):
 class Inpainter(nn.Module):
     def __init__(self,
                  depth_estimator=None,
-#                 sd_model="stabilityai/stable-diffusion-2-inpainting",  # @param {type: "string"}
-                 sd_model = "runwayml/stable-diffusion-inpainting",  #@param {type: "string"}
+                 sd_model="stabilityai/stable-diffusion-2-inpainting",  # @param {type: "string"}
+                 # sd_model = "runwayml/stable-diffusion-inpainting",  #@param {type: "string"}
                  device=torch.device("mps" if torch.backends.mps.is_available() else
                  "cuda" if torch.cuda.is_available() else "cpu"),
                                   

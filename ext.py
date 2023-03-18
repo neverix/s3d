@@ -78,17 +78,16 @@ def b64enc(image):
     return result    
 
 
-# TODO async
 result = requests.post("http://127.0.0.1:7860/run/predict_1", json=dict(data=[
     b64enc(get_image("rgb")),
     b64enc(get_image("alpha")),
     b64enc(get_image("depth")),
     "A fantasy dungeon"
-]), timeout=400).json()
+])).json()
 #result = requests.post("http://127.0.0.1:7860/run/predict", json=dict(data=[
 #    b64enc(get_image("rgb")),
 #    "A grey cube"
-#]), timeout=400).json()
+#])).json()x
 rgb, depth = result["data"]
 (rgb, _), depth = b64dec(rgb), b64dec(depth)[-1][..., 0] * 64  # [..., 0].astype(np.float64)  # / 1024.
 mask = depth > 1e-4
@@ -178,6 +177,9 @@ for n in mat.node_tree.nodes:
     tex = mat.node_tree.nodes.new("ShaderNodeTexImage")
     tex.image = rgb
     mat.node_tree.links.new(tex.outputs[0], n.inputs[0])
+    coord = mat.node_tree.nodes.new("ShaderNodeTexCoord")
+    coord.from_instancer = True
+    mat.node_tree.links.new(coord.outputs[0], tex.inputs[0])
     break
 uv_layer = bm.loops.layers.uv.new()
 for face in bm.faces:
