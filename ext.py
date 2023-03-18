@@ -58,14 +58,18 @@ def get_image(mode="rgb"):
     return image
 
 
-def b64dec(image):
+def b64dec(image, save_dir=os.path.join(
+           os.path.dirname(bpy.data.filepath), "generated_images")):
     assert image.startswith("data:image/png;base64,")
     image = base64.b64decode(image.partition("data:image/png;base64,")[-1])
-    with tempfile.NamedTemporaryFile(suffix=".png") as tf:
+    os.makedirs(save_dir, exist_ok=True)
+    with tempfile.NamedTemporaryFile(suffix=".png",
+                                     dir=save_dir,
+                                     delete=False) as tf:
         open(tf.name, "wb").write(image)
-        tex = bpy.data.images.load(tf.name)
-        tex = np.asarray(tex.pixels).reshape(tex.size[1], tex.size[0], -1)
-    return tex
+        im = bpy.data.images.load(tf.name)
+        te = np.asarray(im.pixels).reshape(im.size[1], im.size[0], -1)
+    return im, te
 
 
 def b64enc(image):
@@ -85,7 +89,7 @@ result = requests.post("http://127.0.0.1:7860/run/predict_1", json=dict(data=[
 #    "A grey cube"
 #])).json()x
 rgb, depth = result["data"]
-rgb, depth = b64dec(rgb)[..., :3], b64dec(depth)[..., 0] * 64  # [..., 0].astype(np.float64)  # / 1024.
+(rgb, _), depth = b64dec(rgb), b64dec(depth)[-1][..., 0] * 64  # [..., 0].astype(np.float64)  # / 1024.
 mask = depth > 1e-4
 
 mesh = bpy.data.meshes.new("mesh")
@@ -100,6 +104,7 @@ mesh = bpy.context.object.data
 bm = bmesh.new()
 
 vertices = {}
+all_vertices = []
 
 def ray_cast(x, y):
     cam = bpy.context.scene.camera  # bpy.data.objects["camera"]
@@ -127,7 +132,8 @@ def ray_cast(x, y):
     target = base + (end - base) * y
     return origin, (target - origin) / np.linalg.norm(target - origin)
 
-def try_get_vertex(x, y):
+
+def try_get_vertex(bm, x, y):
     if not mask[y, x]:
         return None
     
@@ -142,24 +148,40 @@ def try_get_vertex(x, y):
     
     vert = bm.verts.new(point)
     vertices[x, y] = vert
+    all_vertices.append((x, y))
     return vert
 
-def try_make_triangle(xys):
+def try_make_triangle(bm, xys):
     verts = []
     for x, y in xys:
-        vert = try_get_vertex(x, y)
+        vert = try_get_vertex(bm, x, y)
         if vert is None:
             return None
         verts.append(vert)
     return bm.faces.new(verts)
 
+
 for y in range(depth.shape[0] - 1):
     for x in range(depth.shape[1] - 1):
-        a = try_make_triangle([(x, y), (x + 1, y), (x, y + 1)])
-        b = try_make_triangle([(x + 1, y), (x + 1, y + 1), (x, y + 1)])
+        a = try_make_triangle(bm, [(x, y), (x + 1, y), (x, y + 1)])
+        b = try_make_triangle(bm, [(x + 1, y), (x + 1, y + 1), (x, y + 1)])
         if a is None and b is None:
-            try_make_triangle([(x, y), (x + 1, y + 1), (x, y + 1)])
-            try_make_triangle([(x, y), (x + 1, y), (x, y + 1)])
+            try_make_triangle(bm, [(x, y), (x + 1, y + 1), (x, y + 1)])
+            try_make_triangle(bm, [(x, y), (x + 1, y), (x, y + 1)])
 
-bm.to_mesh(mesh)  
+
+mat = bpy.data.materials.new("map_material")
+mat.use_nodes = True
+obj.data.materials.append(mat)
+for n in mat.node_tree.nodes:
+    tex = mat.node_tree.nodes.new("ShaderNodeTexImage")
+    tex.image = rgb
+    mat.node_tree.links.new(tex.outputs[0], n.inputs[0])
+    break
+uv_layer = bm.loops.layers.uv.new()
+for face in bm.faces:
+    for loop in face.loops:
+        loop[uv_layer].uv = np.asarray(list(all_vertices[loop.vert.index])) / mask.shape[0]
+
+bm.to_mesh(mesh)
 bm.free()
