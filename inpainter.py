@@ -204,13 +204,15 @@ class MidasDepth(nn.Module):
                  is_inpainting=False):
         super().__init__()
         self.device = device
+        if self.device.type == "mps":
+            self.device = torch.device("cpu")
         self.model = torch.hub.load("intel-isl/MiDaS", model_type).to(self.device).eval().requires_grad_(False)
         self.transform = torch.hub.load("intel-isl/MiDaS", "transforms").dpt_transform
 
     @torch.no_grad()
     def forward(self, image):
-        if isinstance(image, torch.cuda.FloatTensor):
-            image = image.cpu()
+        if torch.is_tensor(image):
+            image = image.cpu().detach()
         if not isinstance(image, np.ndarray):
             image = np.asarray(image)
         image = image.squeeze()
@@ -230,19 +232,25 @@ class MidasDepth(nn.Module):
 class Inpainter(nn.Module):
     def __init__(self,
                  depth_estimator=None,
-                 sd_model="stabilityai/stable-diffusion-2-inpainting",  # @param {type: "string"}
-                 device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+#                 sd_model="stabilityai/stable-diffusion-2-inpainting",  # @param {type: "string"}
+                 sd_model = "runwayml/stable-diffusion-inpainting",  #@param {type: "string"}
+                 device=torch.device("mps" if torch.backends.mps.is_available() else
+                 "cuda" if torch.cuda.is_available() else "cpu"),
+                                  
+                 sd_device=torch.device("mps" if torch.backends.mps.is_available() else
+                 "cuda" if torch.cuda.is_available() else "cpu"),
                  prompt=None):
         super().__init__()
         self.device = device
+        self.sd_device = sd_device
 
-        # sd_model = "runwayml/stable-diffusion-inpainting"  #@param {type: "string"}
         self.stable_pipe = StableDiffusionInpaintPipeline.from_pretrained(sd_model,
                                                                           #  revision="fp16",
-                                                                          torch_dtype=torch.float16,
-                                                                          use_auth_token=True)
-        self.stable_pipe = self.stable_pipe.to(self.device)
-        self.stable_pipe.scheduler.set_timesteps(1000)
+                                                                          torch_dtype=torch.float16 if self.sd_device.type != "cpu" else torch.float32,
+                                                                          use_auth_token=True,
+                                                                          )
+        self.stable_pipe = self.stable_pipe.to(self.sd_device)
+        self.stable_pipe.enable_attention_slicing()
         del self.stable_pipe.safety_checker
         self.stable_pipe.safety_checker = None  # lambda clip_input, images: (images, [False for _ in images])
 
@@ -255,7 +263,7 @@ class Inpainter(nn.Module):
 
     def _get_depth(self, img: Image.Image, depth=None, depth_mask=None, lr=1, l2_coef=10, iterations=500, floor=1,
                    true_floor=0.5):
-        im = torch.from_numpy(np.asarray(img)).to(self.device).float() / 255.
+        im = torch.from_numpy(np.asarray(img)).float().to(self.device) / 255.
         og_depth = self.depth_estimator(im.unsqueeze(0) * 255.)[0]
         d = og_depth
         d = (d - d.min()) / (d.max() - d.min()) * (10 - 3) + 3
@@ -271,7 +279,7 @@ class Inpainter(nn.Module):
         depth_mask = cv2.erode(depth_mask, np.ones((3, 3)))
         if depth_mask.any():
             floor = max(true_floor, min(floor, depth[depth_mask > 0.5].min()))
-        depth = torch.from_numpy(depth).to(self.device)
+        depth = torch.from_numpy(depth).float().to(self.device)
         depth_mask = torch.from_numpy(depth_mask).to(self.device).float()
         with torch.set_grad_enabled(True):
             # depth_mask = depth_mask == 0
@@ -311,7 +319,8 @@ class Inpainter(nn.Module):
                 self.prompt = None
             image = self.stable_pipe(self.prompt,
                                      image=Image.new("RGB", (512, 512)),
-                                     mask_image=Image.new("L", (512, 512), 255)).images[0]
+                                     mask_image=Image.new("L", (512, 512), 255),
+                                     num_inference_steps=25).images[0]
         depth = self._get_depth(image)
         return image, depth
 
@@ -330,7 +339,8 @@ class Inpainter(nn.Module):
             self.prompt = None  # lol. lmao even
         image = self.stable_pipe(self.prompt, image,
                                  # ImageOps only supports RGB
-                                 ImageOps.invert(mask.convert("RGB")).convert("L")).images[0]
+                                 ImageOps.invert(mask.convert("RGB")).convert("L"),
+                                 num_inference_steps=25).images[0]
         # break
         depth = self._get_depth(image, depth=depth, depth_mask=np.asarray(mask).reshape(depth.shape) > 0)
         return image, depth
