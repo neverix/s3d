@@ -26,7 +26,6 @@ def step(rgb, mask, depth, *args, **kwargs):
     depth = cv2.imread(depth, -1)
     if len(depth.shape) > 2:
         depth = depth[..., 0]
-    print(depth.max(), depth.mean())
     rgb, depth = inpainter.step(rgb.convert("RGB"), mask,
                                 # depth / 255. * 64.,
                                 depth / float(np.iinfo(depth.dtype).max),
