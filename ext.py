@@ -95,6 +95,10 @@ class CompleteDepthPanel(bpy.types.Panel):
 class CompleteDepth(bpy.types.Operator):
     bl_idname="s3d.complete"
     bl_label="Complete Depth"
+    text: bpy.props.StringProperty(
+        name = "text",
+        default = "A fantasy dungeon"
+    )
     
     _state = 0
     _response = None
@@ -103,14 +107,14 @@ class CompleteDepth(bpy.types.Operator):
     def modal(self, context, event):
         if event.type == "TIMER":
             if self._state == 0:
-                def fn():
+                rgb, alpha, depth = (b64enc(get_image(x)) for x in ("rgb", "alpha", "depth"))
+                def fn(text, rgb, alpha, depth):
                     self._response = requests.post("http://127.0.0.1:7860/run/predict_1", json=dict(data=[
-                        b64enc(get_image("rgb")),
-                        b64enc(get_image("alpha")),
-                        b64enc(get_image("depth")),
-                        "A fantasy dungeon"
+                        rgb, alpha, depth,
+                        text
                     ])).json()
-                threading.Thread(target=fn).start()
+                threading.Thread(target=fn, args=(self.text,
+                                 rgb, alpha, depth)).start()
                 self._state = 1
             elif self._state == 1:
                 if self._response is not None:
@@ -196,7 +200,7 @@ class CompleteDepth(bpy.types.Operator):
                         if a is None and b is None:
                             try_make_triangle(bm, [(x, y), (x + 1, y + 1), (x, y + 1)])
                             try_make_triangle(bm, [(x, y), (x + 1, y), (x, y + 1)])
-
+                bm.verts.index_update()
 
                 mat = bpy.data.materials.new("map_material")
                 mat.use_nodes = True
@@ -210,15 +214,25 @@ class CompleteDepth(bpy.types.Operator):
                 #    mat.node_tree.links.new(coord.outputs[2], tex.inputs[0])
                     break
                 uv_layer = bm.loops.layers.uv.new()
+#                tex_layer = bm.faces.layers.tex.new()
+#                uv_layer = bm.loops.layers.uv.get(uv_tex.name, False)
+                count = 0
                 for face in bm.faces:
+#                    face[tex_layer].image = rgb
                     for loop in face.loops:
                         # loop.vert.index
-                        loop[uv_layer].uv = tuple(np.asarray(list(
-                        next(iter(k for k, v in vertices.items() if v == face.verts[0]))
-                        )) / mask.shape[0])
+                        print((all_vertices[loop.vert.index], loop.vert.index))
+                        loop[uv_layer].uv = tuple(np.asarray(
+                                            all_vertices[loop.vert.index])
+                                            / np.asarray(depth.shape)
+                                            )[::-1]
+                        count += 1
 
                 bm.to_mesh(mesh)
                 bm.free()
+                print("result:", count)
+                return {"FINISHED"}
+        
         return {"PASS_THROUGH"}
 
     
