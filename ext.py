@@ -1,13 +1,16 @@
 from bpy_extras.view3d_utils import region_2d_to_origin_3d
 from bpy_extras.view3d_utils import region_2d_to_vector_3d
 import numpy as np
+import threading
 import requests
 import tempfile
 import base64
 import bmesh
 import json
 import bpy
+import sys
 import os
+import io
 
 
 def get_image(mode="rgb"):
@@ -78,113 +81,172 @@ def b64enc(image):
     return result    
 
 
-result = requests.post("http://127.0.0.1:7860/run/predict_1", json=dict(data=[
-    b64enc(get_image("rgb")),
-    b64enc(get_image("alpha")),
-    b64enc(get_image("depth")),
-    "A fantasy dungeon"
-])).json()
-#result = requests.post("http://127.0.0.1:7860/run/predict", json=dict(data=[
-#    b64enc(get_image("rgb")),
-#    "A grey cube"
-#])).json()x
-rgb, depth = result["data"]
-(rgb, _), depth = b64dec(rgb), b64dec(depth)[-1][..., 0] * 64  # [..., 0].astype(np.float64)  # / 1024.
-mask = depth > 1e-4
-
-mesh = bpy.data.meshes.new("mesh")
-obj = bpy.data.objects.new("image", mesh)
-scene = bpy.context.scene
-scene.collection.objects.link(obj)
-bpy.context.view_layer.objects.active = obj
-scene.render.resolution_x = 512
-scene.render.resolution_y = 512
-
-mesh = bpy.context.object.data
-bm = bmesh.new()
-
-vertices = {}
-all_vertices = []
-
-def ray_cast(x, y):
-    cam = bpy.context.scene.camera  # bpy.data.objects["camera"]
+class CompleteDepthPanel(bpy.types.Panel):
+    bl_label = "Depth completion"
+    bl_idname = "CompleteDepthUI"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Tool"
     
-    ## set view mode to 3D to have all needed variables available
-    #bpy.context.area.type = "VIEW_3D"
+    def draw(self, context):
+        self.layout.row().operator("s3d.complete")
 
-    # get vectors which define view frustum of camera
-    frame = [cam.matrix_world.normalized() @ u
-             for u in cam.data.view_frame(scene=bpy.context.scene)]
-    topRight = frame[0]
-    bottomRight = frame[1]
-    bottomLeft = frame[2]
-    topLeft = frame[3]
+
+class CompleteDepth(bpy.types.Operator):
+    bl_idname="s3d.complete"
+    bl_label="Complete Depth"
     
-    # number of pixels in X/Y direction
-    resolutionX = int(bpy.context.scene.render.resolution_x * (bpy.context.scene.render.resolution_percentage / 100))
-    resolutionY = int(bpy.context.scene.render.resolution_y * (bpy.context.scene.render.resolution_percentage / 100))
-
-    # interpolate
-    x, y = x / resolutionX, y / resolutionY
-    origin = cam.matrix_world.translation
-    base = topLeft + (topRight - topLeft) * x    
-    end = bottomLeft + (bottomRight - bottomLeft) * x    
-    target = base + (end - base) * y
-    return origin, (target - origin) / np.linalg.norm(target - origin)
-
-
-def try_get_vertex(bm, x, y):
-    if not mask[y, x]:
-        return None
+    _state = 0
+    _response = None
+    _running = False
     
-    if (x, y) in vertices:
-        return vertices[x, y]
+    def modal(self, context, event):
+        if event.type == "TIMER":
+            if self._state == 0:
+                def fn():
+                    self._response = requests.post("http://127.0.0.1:7860/run/predict_1", json=dict(data=[
+                        b64enc(get_image("rgb")),
+                        b64enc(get_image("alpha")),
+                        b64enc(get_image("depth")),
+                        "A fantasy dungeon"
+                    ])).json()
+                threading.Thread(target=fn).start()
+                self._state = 1
+            elif self._state == 1:
+                if self._response is not None:
+                    self._state = 2
+            elif self._state == 2:
+                rgb, depth = self._response["data"]
+                (rgb, _), depth = b64dec(rgb), b64dec(depth)[-1][..., 0] * 64  # [..., 0].astype(np.float64)  # / 1024.
+                mask = depth > 1e-4
+
+                mesh = bpy.data.meshes.new("mesh")
+                obj = bpy.data.objects.new("image", mesh)
+                scene = context.scene
+                scene.collection.objects.link(obj)
+                bpy.context.view_layer.objects.active = obj
+                scene.render.resolution_x = 512
+                scene.render.resolution_y = 512
+                
+                mesh = bpy.context.object.data
+                bm = bmesh.new()
+                
+                vertices = {}
+                all_vertices = []
+
+                def ray_cast(x, y):
+                    cam = bpy.context.scene.camera  # bpy.data.objects["camera"]
+                    
+                    ## set view mode to 3D to have all needed variables available
+                    #bpy.context.area.type = "VIEW_3D"
+
+                    # get vectors which define view frustum of camera
+                    frame = [cam.matrix_world.normalized() @ u
+                             for u in cam.data.view_frame(scene=bpy.context.scene)]
+                    topRight = frame[0]
+                    bottomRight = frame[1]
+                    bottomLeft = frame[2]
+                    topLeft = frame[3]
+                    
+                    # number of pixels in X/Y direction
+                    resolutionX = int(bpy.context.scene.render.resolution_x * (bpy.context.scene.render.resolution_percentage / 100))
+                    resolutionY = int(bpy.context.scene.render.resolution_y * (bpy.context.scene.render.resolution_percentage / 100))
+
+                    # interpolate
+                    x, y = x / resolutionX, y / resolutionY
+                    origin = cam.matrix_world.translation
+                    base = topLeft + (topRight - topLeft) * x    
+                    end = bottomLeft + (bottomRight - bottomLeft) * x    
+                    target = base + (end - base) * y
+                    return origin, (target - origin) / np.linalg.norm(target - origin)
+
+
+                def try_get_vertex(bm, x, y):
+                    if not mask[y, x]:
+                        return None
+                    
+                    if (x, y) in vertices:
+                        return vertices[x, y]
+                    
+                    region = bpy.context.region
+                    rv3d = bpy.context.region_data   
+
+                    ray_origin, ray_vector = ray_cast(x, y)
+                    point = ray_origin + ray_vector * depth[y, x]
+                    
+                    vert = bm.verts.new(point)
+                    vertices[x, y] = vert
+                    all_vertices.append((x, y))
+                    return vert
+
+                def try_make_triangle(bm, xys):
+                    verts = []
+                    for x, y in xys:
+                        vert = try_get_vertex(bm, x, y)
+                        if vert is None:
+                            return None
+                        verts.append(vert)
+                    return bm.faces.new(verts)
+
+
+                for y in range(depth.shape[0] - 1):
+                    for x in range(depth.shape[1] - 1):
+                        a = try_make_triangle(bm, [(x, y), (x + 1, y), (x, y + 1)])
+                        b = try_make_triangle(bm, [(x + 1, y), (x + 1, y + 1), (x, y + 1)])
+                        if a is None and b is None:
+                            try_make_triangle(bm, [(x, y), (x + 1, y + 1), (x, y + 1)])
+                            try_make_triangle(bm, [(x, y), (x + 1, y), (x, y + 1)])
+
+
+                mat = bpy.data.materials.new("map_material")
+                mat.use_nodes = True
+                obj.data.materials.append(mat)
+                for n in mat.node_tree.nodes:
+                    tex = mat.node_tree.nodes.new("ShaderNodeTexImage")
+                    tex.image = rgb
+                    mat.node_tree.links.new(tex.outputs[0], n.inputs[0])
+                #    coord = mat.node_tree.nodes.new("ShaderNodeTexCoord")
+                #    coord.from_instancer = True
+                #    mat.node_tree.links.new(coord.outputs[2], tex.inputs[0])
+                    break
+                uv_layer = bm.loops.layers.uv.new()
+                for face in bm.faces:
+                    for loop in face.loops:
+                        # loop.vert.index
+                        loop[uv_layer].uv = tuple(np.asarray(list(
+                        next(iter(k for k, v in vertices.items() if v == face.verts[0]))
+                        )) / mask.shape[0])
+
+                bm.to_mesh(mesh)
+                bm.free()
+        return {"PASS_THROUGH"}
+
     
-    region = bpy.context.region
-    rv3d = bpy.context.region_data   
+    def execute(self, context):
+        if self._running:
+            return {"RUNNING_MODAL"}
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(0.01, window=context.window)
+        wm.modal_handler_add(self)
+        self._state = 0
+        self._response = None
+        self._running = True
+        return {"RUNNING_MODAL"}
 
-    ray_origin, ray_vector = ray_cast(x, y)
-    point = ray_origin + ray_vector * depth[y, x]
-    
-    vert = bm.verts.new(point)
-    vertices[x, y] = vert
-    all_vertices.append((x, y))
-    return vert
-
-def try_make_triangle(bm, xys):
-    verts = []
-    for x, y in xys:
-        vert = try_get_vertex(bm, x, y)
-        if vert is None:
-            return None
-        verts.append(vert)
-    return bm.faces.new(verts)
+    def cancel(self, context):
+        wm = context.window_manager
+        wm.event_timer_remove(self._timer)
 
 
-for y in range(depth.shape[0] - 1):
-    for x in range(depth.shape[1] - 1):
-        a = try_make_triangle(bm, [(x, y), (x + 1, y), (x, y + 1)])
-        b = try_make_triangle(bm, [(x + 1, y), (x + 1, y + 1), (x, y + 1)])
-        if a is None and b is None:
-            try_make_triangle(bm, [(x, y), (x + 1, y + 1), (x, y + 1)])
-            try_make_triangle(bm, [(x, y), (x + 1, y), (x, y + 1)])
+def register():
+    bpy.utils.register_class(CompleteDepth)
+    bpy.utils.register_class(CompleteDepthPanel)
 
 
-mat = bpy.data.materials.new("map_material")
-mat.use_nodes = True
-obj.data.materials.append(mat)
-for n in mat.node_tree.nodes:
-    tex = mat.node_tree.nodes.new("ShaderNodeTexImage")
-    tex.image = rgb
-    mat.node_tree.links.new(tex.outputs[0], n.inputs[0])
-    coord = mat.node_tree.nodes.new("ShaderNodeTexCoord")
-    coord.from_instancer = True
-    mat.node_tree.links.new(coord.outputs[0], tex.inputs[0])
-    break
-uv_layer = bm.loops.layers.uv.new()
-for face in bm.faces:
-    for loop in face.loops:
-        loop[uv_layer].uv = np.asarray(list(all_vertices[loop.vert.index])) / mask.shape[0]
+def unregister():
+    bpy.utils.unregister_class(CompleteDepth)
+    bpy.utils.unregister_class(CompleteDepthPanel)
 
-bm.to_mesh(mesh)
-bm.free()
+if __name__ == "__main__":
+    register()
+    # bpy.ops.s3d.complete()
