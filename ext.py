@@ -30,7 +30,7 @@ def get_image(mode="rgb"):
         tree.nodes.remove(n)
     rl = tree.nodes.new('CompositorNodeRLayers')
     if mode in ("depth", "alpha"):
-        bpy.context.scene.view_layers["ViewLayer"].use_pass_z = True
+        # bpy.context.scene.view_layers["ViewLayer"].use_pass_z = True
         map = tree.nodes.new(type="CompositorNodeMapValue")
         map.size = [1024]  # [1]  # /64]  # /1024]
         map.use_min = False  # True
@@ -112,7 +112,7 @@ class CompleteDepth(bpy.types.Operator):
                     self._response = requests.post("http://127.0.0.1:7860/run/predict_1", json=dict(data=[
                         rgb, alpha, depth,
                         text
-                    ])).json()
+                    ]), timeout=320).json()
                 threading.Thread(target=fn, args=(self.text,
                                  rgb, alpha, depth)).start()
                 self._state = 1
@@ -221,11 +221,11 @@ class CompleteDepth(bpy.types.Operator):
 #                    face[tex_layer].image = rgb
                     for loop in face.loops:
                         # loop.vert.index
-                        print((all_vertices[loop.vert.index], loop.vert.index))
-                        loop[uv_layer].uv = tuple(np.asarray(
+                        loop[uv_layer].uv = tuple(np.array([0.0, 1.0])
+                                            - np.array([1.0, -1.0]) * np.asarray(
                                             all_vertices[loop.vert.index])
-                                            / np.asarray(depth.shape)
-                                            )[::-1]
+                                            / np.asarray(depth.shape)[::-1]
+                                            )
                         count += 1
 
                 bm.to_mesh(mesh)

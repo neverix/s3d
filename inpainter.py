@@ -232,11 +232,10 @@ class MidasDepth(nn.Module):
 class Inpainter(nn.Module):
     def __init__(self,
                  depth_estimator=None,
-                 sd_model="stabilityai/stable-diffusion-2-inpainting",  # @param {type: "string"}
-                 # sd_model = "runwayml/stable-diffusion-inpainting",  #@param {type: "string"}
-                 device=torch.device("mps" if torch.backends.mps.is_available() else
+#                 sd_model="stabilityai/stable-diffusion-2-inpainting",  # @param {type: "string"}
+                  sd_model = "runwayml/stable-diffusion-inpainting",  #@param {type: "string"}
+                 device=torch.device(  # "mps" if torch.backends.mps.is_available() else
                  "cuda" if torch.cuda.is_available() else "cpu"),
-                                  
                  sd_device=torch.device("mps" if torch.backends.mps.is_available() else
                  "cuda" if torch.cuda.is_available() else "cpu"),
                  prompt=None):
@@ -246,7 +245,7 @@ class Inpainter(nn.Module):
 
         self.stable_pipe = StableDiffusionInpaintPipeline.from_pretrained(sd_model,
                                                                           #  revision="fp16",
-                                                                          torch_dtype=torch.float16 if self.sd_device.type != "cpu" else torch.float32,
+                                                                          torch_dtype=torch.float16 if self.sd_device.type == "cuda:0" else torch.float32,
                                                                           use_auth_token=True,
                                                                           )
         self.stable_pipe = self.stable_pipe.to(self.sd_device)

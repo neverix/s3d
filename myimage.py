@@ -2,7 +2,7 @@ from copy import deepcopy
 from pathlib import Path
 from PIL import Image as _Image  # using _ to minimize namespace pollution
 import numpy as np  
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Tuple, Type
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Tuple, Type, Union
 from typing_extensions import Literal
 import tempfile
 import base64
@@ -56,23 +56,23 @@ class Image(
 
     def __init__(
         self,
-        value: str | _Image.Image | np.ndarray | None = None,
+        value: Union[str, _Image.Image, np.ndarray, None] = None,
         *,
-        shape: Tuple[int, int] | None = None,
+        shape: Union[Tuple[int, int], None] = None,
         image_mode: str = "RGB",
         invert_colors: bool = False,
         source: str = "upload",
-        tool: str | None = None,
+        tool: Union[str, None] = None,
         type: str = "numpy",
-        label: str | None = None,
-        every: float | None = None,
+        label: Union[str, None] = None,
+        every: Union[float, None] = None,
         show_label: bool = True,
-        interactive: bool | None = None,
+        interactive: Union[bool, None] = None,
         visible: bool = True,
         streaming: bool = False,
-        elem_id: str | None = None,
+        elem_id: Union[str, None] = None,
         mirror_webcam: bool = True,
-        brush_radius: int | None = None,
+        brush_radius: Union[int, None] = None,
         **kwargs,
     ):
         """
@@ -148,12 +148,12 @@ class Image(
 
     @staticmethod
     def update(
-        value: Any | Literal[_Keywords.NO_VALUE] | None = _Keywords.NO_VALUE,
-        label: str | None = None,
-        show_label: bool | None = None,
-        interactive: bool | None = None,
-        visible: bool | None = None,
-        brush_radius: int | None = None,
+        value: Union[Any, Literal[_Keywords.NO_VALUE], None] = _Keywords.NO_VALUE,
+        label: Union[str, None] = None,
+        show_label: Union[bool, None] = None,
+        interactive: Union[bool, None] = None,
+        visible: Union[bool, None] = None,
+        brush_radius: Union[int, None] = None,
     ):
         updated_config = {
             "label": label,
@@ -167,8 +167,8 @@ class Image(
         return IOComponent.add_interactive_to_config(updated_config, interactive)
 
     def _format_image(
-        self, im: _Image.Image | None
-    ) -> np.ndarray | _Image.Image | str | None:
+        self, im: Union[_Image.Image, None]
+    ) -> Union[np.ndarray, _Image.Image, str, None]:
         """Helper method to format an image based on self.type"""
         if im is None:
             return im
@@ -195,8 +195,8 @@ class Image(
         return deepcopy(media_data.BASE64_IMAGE)
 
     def preprocess(
-        self, x: str | Dict[str, str]
-    ) -> np.ndarray | _Image.Image | str | Dict | None:
+        self, x: Union[str, Dict[str, str]]
+    ) -> Union[np.ndarray, _Image.Image, str, Dict, None]:
         """
         Parameters:
             x: base64 url data, or (if tool == "sketch") a dict of image and mask base64 url data
@@ -248,8 +248,8 @@ class Image(
         return self._format_image(im)
 
     def postprocess(
-        self, y: np.ndarray | _Image.Image | str | Path | None
-    ) -> str | None:
+        self, y: Union[np.ndarray, _Image.Image, str, Path, None]
+    ) -> Union[str, None]:
         """
         Parameters:
             y: image as a numpy array, PIL Image, string/Path filepath, or string URL
@@ -365,7 +365,7 @@ class Image(
             output_scores = (output_scores - min_val) / (max_val - min_val)
         return output_scores.tolist()
 
-    def style(self, *, height: int | None = None, width: int | None = None, **kwargs):
+    def style(self, *, height: Union[int, None] = None, width: Union[int, None] = None, **kwargs):
         """
         This method can be used to change the appearance of the Image component.
         Parameters:
@@ -384,8 +384,8 @@ class Image(
         fn: Callable,
         inputs: List[Component],
         outputs: List[Component],
-        _js: str | None = None,
-        api_name: str | None = None,
+        _js: Union[str, None] = None,
+        api_name: Union[str, None] = None,
         preprocess: bool = True,
         postprocess: bool = True,
     ):
@@ -410,7 +410,7 @@ class Image(
             postprocess=postprocess,
         )
 
-    def as_example(self, input_data: str | None) -> str:
+    def as_example(self, input_data: Union[str, None]) -> str:
         if input_data is None:
             return ""
         elif (
