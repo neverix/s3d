@@ -1,5 +1,6 @@
 from diffusers import StableDiffusionInpaintPipeline
 from typing import Optional, Union
+from tqdm.auto import trange
 from PIL import ImageOps
 from PIL import Image
 from torch import nn
@@ -286,7 +287,7 @@ class Inpainter(nn.Module):
             optim = torch.optim.Adam([param], lr=lr)
             # bar = range(iterations)
             # img_dep[mask] = 0
-            for _ in range(iterations):
+            for _ in trange(iterations):
                 # du = depth.clone()
                 du = torch.nan_to_num(depth.clone().double().log())
                 # du[depth_mask < 0.5] = nn.functional.softplus(param[depth_mask < 0.5] - floor, beta=0.25) + floor
