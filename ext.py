@@ -43,7 +43,7 @@ def get_image(mode="rgb"):
         result = invert
         if mode == "alpha":
             thresh = tree.nodes.new(type="CompositorNodeMath")
-            thresh.operation = "GREATER_THAN"
+            thresh.operation = "LESS_THAN"
             links.new(result.outputs[0], thresh.inputs[0])
             thresh.inputs[1].default_value = 0.1
             result = thresh
@@ -93,6 +93,10 @@ class CompleteDepthPanel(bpy.types.Panel):
 
 
 class CompleteDepth(bpy.types.Operator):
+    """
+    Completes the scene using 3D scene inpainting
+    """
+    
     bl_idname="s3d.complete"
     bl_label="Complete Depth"
     text: bpy.props.StringProperty(
@@ -112,7 +116,7 @@ class CompleteDepth(bpy.types.Operator):
                     self._response = requests.post("http://127.0.0.1:7860/run/predict_1", json=dict(data=[
                         rgb, alpha, depth,
                         text
-                    ]), timeout=320).json()
+                    ]), timeout=320 * 60).json()
                 threading.Thread(target=fn, args=(self.text,
                                  rgb, alpha, depth)).start()
                 self._state = 1
@@ -176,6 +180,9 @@ class CompleteDepth(bpy.types.Operator):
                     rv3d = bpy.context.region_data   
 
                     ray_origin, ray_vector = ray_cast(x, y)
+                    _, center_vector = ray_cast(image.shape[1] // 2, image.shape[0] // 2)
+                    z_current = np.dot(ray_vector, center_vector)
+                    ray_vector = ray_vector / z_current
                     point = ray_origin + ray_vector * depth[y, x]
                     
                     vert = bm.verts.new(point)
@@ -222,7 +229,7 @@ class CompleteDepth(bpy.types.Operator):
                     for loop in face.loops:
                         # loop.vert.index
                         loop[uv_layer].uv = tuple(np.array([0.0, 1.0])
-                                            - np.array([1.0, -1.0]) * np.asarray(
+                                            + np.array([1.0, -1.0]) * np.asarray(
                                             all_vertices[loop.vert.index])
                                             / np.asarray(depth.shape)[::-1]
                                             )
@@ -230,7 +237,6 @@ class CompleteDepth(bpy.types.Operator):
 
                 bm.to_mesh(mesh)
                 bm.free()
-                print("result:", count)
                 return {"FINISHED"}
         
         return {"PASS_THROUGH"}
