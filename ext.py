@@ -81,15 +81,21 @@ def b64enc(image):
     return result    
 
 
-class CompleteDepthPanel(bpy.types.Panel):
+class S3D_PT_Panel(bpy.types.Panel):
     bl_label = "Depth completion"
-    bl_idname = "CompleteDepthUI"
+    bl_idname = "S3D_PT_Panel"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "Tool"
+    text_prop: bpy.props.StringProperty(
+        name = "text_prop",
+        default = "A fantasy dungeon"
+    )
     
     def draw(self, context):
+        text = self.layout.row().prop(bpy.context.scene.s3d_settings, "text")
         self.layout.row().operator("s3d.complete")
+        self.layout.enabled = not CompleteDepth._running
 
 
 class CompleteDepth(bpy.types.Operator):
@@ -99,10 +105,6 @@ class CompleteDepth(bpy.types.Operator):
     
     bl_idname="s3d.complete"
     bl_label="Complete Depth"
-    text: bpy.props.StringProperty(
-        name = "text",
-        default = "A fantasy dungeon"
-    )
     
     _state = 0
     _response = None
@@ -117,7 +119,8 @@ class CompleteDepth(bpy.types.Operator):
                         rgb, alpha, depth,
                         text
                     ]), timeout=320 * 60).json()
-                threading.Thread(target=fn, args=(self.text,
+                threading.Thread(target=fn, args=(
+                                 context.scene.s3d_settings.text,
                                  rgb, alpha, depth)).start()
                 self._state = 1
             elif self._state == 1:
@@ -258,14 +261,26 @@ class CompleteDepth(bpy.types.Operator):
         wm.event_timer_remove(self._timer)
 
 
+class S3DSettings(bpy.types.PropertyGroup):
+    text: bpy.props.StringProperty(
+        name = "text",
+        default = "A fantasy dungeon"
+    )
+
+
 def register():
     bpy.utils.register_class(CompleteDepth)
-    bpy.utils.register_class(CompleteDepthPanel)
+    bpy.utils.register_class(S3D_PT_Panel)
+    bpy.utils.register_class(S3DSettings)
+    bpy.types.Scene.s3d_settings = bpy.props.PointerProperty(type=S3DSettings)
 
 
 def unregister():
     bpy.utils.unregister_class(CompleteDepth)
-    bpy.utils.unregister_class(CompleteDepthPanel)
+    bpy.utils.unregister_class(S3D_PT_Panel)
+    bpy.utils.unregister_class(S3DSettings)
+    del bpy.types.Scene.s3d_settings
+
 
 if __name__ == "__main__":
     register()
