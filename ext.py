@@ -32,18 +32,18 @@ def get_image(mode="rgb"):
     if mode in ("depth", "alpha"):
         # bpy.context.scene.view_layers["ViewLayer"].use_pass_z = True
         map = tree.nodes.new(type="CompositorNodeMapValue")
-        map.size = [1024]  # [1]  # /64]  # /1024]
+        map.size = [1]  # [1]  # /64]  # /1024]
         map.use_min = False  # True
-        map.min = [0]
+#        map.min = [0]
         map.use_max = False  # True
-        map.max = [2 ** 16]
-        links.new(rl.outputs[2], map.inputs[0])
+#        map.max = [2 ** 16]
+        links.new(rl.outputs[2 if mode == "depth" else 1], map.inputs[0])
         invert = tree.nodes.new(type="CompositorNodeInvert")
         links.new(map.outputs[0], invert.inputs[1])
         result = invert
         if mode == "alpha":
             thresh = tree.nodes.new(type="CompositorNodeMath")
-            thresh.operation = "LESS_THAN"
+            thresh.operation = "GREATER_THAN"
             links.new(result.outputs[0], thresh.inputs[0])
             thresh.inputs[1].default_value = 0.1
             result = thresh
@@ -93,6 +93,7 @@ class S3D_PT_Panel(bpy.types.Panel):
     )
     
     def draw(self, context):
+        text = self.layout.row().prop(bpy.context.scene.s3d_settings, "gradio_addr")
         text = self.layout.row().prop(bpy.context.scene.s3d_settings, "text")
         self.layout.row().operator("s3d.complete")
         self.layout.enabled = not CompleteDepth._running
@@ -115,7 +116,10 @@ class CompleteDepth(bpy.types.Operator):
             if self._state == 0:
                 rgb, alpha, depth = (b64enc(get_image(x)) for x in ("rgb", "alpha", "depth"))
                 def fn(text, rgb, alpha, depth):
-                    self._response = requests.post("http://127.0.0.1:7860/run/predict_1", json=dict(data=[
+                    self._response = requests.post(os.path.join(
+                        context.scene.s3d_settings.gradio_addr,
+                        "run", "predict_1"
+                    ), json=dict(data=[
                         rgb, alpha, depth,
                         text
                     ]), timeout=320 * 60).json()
@@ -262,6 +266,10 @@ class CompleteDepth(bpy.types.Operator):
 
 
 class S3DSettings(bpy.types.PropertyGroup):
+    gradio_addr: bpy.props.StringProperty(
+        name = "gradio address",
+        default = "http://127.0.0.1:7860"
+    )
     text: bpy.props.StringProperty(
         name = "text",
         default = "A fantasy dungeon"
