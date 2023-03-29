@@ -29,25 +29,36 @@ def get_image(mode="rgb"):
     for n in tree.nodes:
         tree.nodes.remove(n)
     rl = tree.nodes.new('CompositorNodeRLayers')
-    if mode in ("depth", "alpha"):
+    if mode == "depth":
         # bpy.context.scene.view_layers["ViewLayer"].use_pass_z = True
-        map = tree.nodes.new(type="CompositorNodeMapValue")
-        map.size = [1]  # [1]  # /64]  # /1024]
-        map.use_min = False  # True
-#        map.min = [0]
-        map.use_max = False  # True
-#        map.max = [2 ** 16]
-        links.new(rl.outputs[2 if mode == "depth" else 1], map.inputs[0])
-        invert = tree.nodes.new(type="CompositorNodeInvert")
-        links.new(map.outputs[0], invert.inputs[1])
-        result = invert
-        if mode == "alpha":
-            bpy.context.scene.render.film_transparent = True
-            thresh = tree.nodes.new(type="CompositorNodeMath")
-            thresh.operation = "GREATER_THAN"
-            links.new(result.outputs[0], thresh.inputs[0])
-            thresh.inputs[1].default_value = 0.1
-            result = thresh
+#        map = tree.nodes.new(type="CompositorNodeMapValue")
+#        map.size = [1024]  # [1]  # /64]  # /1024]
+#        map.use_min = False  # True
+##        map.min = [0]
+#        map.use_max = False  # True
+##        map.max = [2 ** 16]
+#        links.new(rl.outputs[2 if mode == "depth" else 1], map.inputs[0])
+        map = tree.nodes.new(type="CompositorNodeMath")
+#        map.operation = "DIVIDE"
+        map.operation = "MULTIPLY"
+#        map.inputs[0].default_value = 1024.0
+        map.inputs[0].default_value = 64.0
+        links.new(rl.outputs[2], map.inputs[1])
+        result = map
+#        invert = tree.nodes.new(type="CompositorNodeInvert")
+#        links.new(map.outputs[0], invert.inputs[1])
+#        invert = tree.nodes.new(type="CompositorNodeMath")
+#        invert.operation = "DIVIDE"
+#        thresh.inputs[0].default_value = 1.0
+#        links.new(map.outputs[0], invert.inputs[1])
+#        result = invert
+    elif mode == "alpha":
+        bpy.context.scene.render.film_transparent = True
+        thresh = tree.nodes.new(type="CompositorNodeMath")
+        thresh.operation = "GREATER_THAN"
+        links.new(rl.outputs[1], thresh.inputs[0])
+        thresh.inputs[1].default_value = 0.1
+        result = thresh
     elif mode == "rgb":
         result = rl
     else:
@@ -94,8 +105,9 @@ class S3D_PT_Panel(bpy.types.Panel):
     )
     
     def draw(self, context):
-        text = self.layout.row().prop(bpy.context.scene.s3d_settings, "gradio_addr")
-        text = self.layout.row().prop(bpy.context.scene.s3d_settings, "text")
+        self.layout.row().prop(bpy.context.scene.s3d_settings, "gradio_addr")
+        self.layout.row().prop(bpy.context.scene.s3d_settings, "text")
+        self.layout.row().prop(bpy.context.scene.s3d_settings, "run_for")
         self.layout.row().operator("s3d.complete")
         self.layout.enabled = not CompleteDepth._running
 
@@ -109,6 +121,7 @@ class CompleteDepth(bpy.types.Operator):
     bl_label="Complete Depth"
     
     _state = 0
+    _step = 0
     _response = None
     _running = False
     
@@ -191,7 +204,7 @@ class CompleteDepth(bpy.types.Operator):
                     _, center_vector = ray_cast(depth.shape[1] // 2, depth.shape[0] // 2)
                     z_current = np.dot(ray_vector, center_vector)
                     ray_vector = ray_vector / z_current
-                    point = ray_origin + ray_vector * depth[y, x]
+                    point = ray_origin + ray_vector * depth[-1 - y, x]
                     
                     vert = bm.verts.new(point)
                     vertices[x, y] = vert
@@ -246,6 +259,8 @@ class CompleteDepth(bpy.types.Operator):
 
                 bm.to_mesh(mesh)
                 bm.free()
+                self._state = 0
+                self._running = False
                 return {"FINISHED"}
         
         return {"PASS_THROUGH"}
@@ -258,7 +273,7 @@ class CompleteDepth(bpy.types.Operator):
         self._timer = wm.event_timer_add(0.01, window=context.window)
         wm.modal_handler_add(self)
         self._state = 0
-        self._response = None
+        self._step = 1
         self._running = True
         return {"RUNNING_MODAL"}
 
@@ -276,20 +291,24 @@ class S3DSettings(bpy.types.PropertyGroup):
         name = "text",
         default = "A fantasy dungeon"
     )
+    run_for: bpy.props.IntProperty(
+        name = "complete for",
+        default = 8,
+        min=1
+    )
 
 
 def register():
-    bpy.utils.register_class(CompleteDepth)
-    bpy.utils.register_class(S3D_PT_Panel)
     bpy.utils.register_class(S3DSettings)
     bpy.types.Scene.s3d_settings = bpy.props.PointerProperty(type=S3DSettings)
-
+    bpy.utils.register_class(CompleteDepth)
+    bpy.utils.register_class(S3D_PT_Panel)
 
 def unregister():
-    bpy.utils.unregister_class(CompleteDepth)
-    bpy.utils.unregister_class(S3D_PT_Panel)
     bpy.utils.unregister_class(S3DSettings)
     del bpy.types.Scene.s3d_settings
+    bpy.utils.unregister_class(CompleteDepth)
+    bpy.utils.unregister_class(S3D_PT_Panel)
 
 
 if __name__ == "__main__":
