@@ -183,7 +183,7 @@ class CompleteDepth(bpy.types.Operator):
                     rv3d = bpy.context.region_data   
 
                     ray_origin, ray_vector = ray_cast(x, y)
-                    _, center_vector = ray_cast(image.shape[1] // 2, image.shape[0] // 2)
+                    _, center_vector = ray_cast(depth.shape[1] // 2, depth.shape[0] // 2)
                     z_current = np.dot(ray_vector, center_vector)
                     ray_vector = ray_vector / z_current
                     point = ray_origin + ray_vector * depth[y, x]

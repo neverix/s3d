@@ -233,8 +233,8 @@ class MidasDepth(nn.Module):
 class Inpainter(nn.Module):
     def __init__(self,
                  depth_estimator=None,
-#                 sd_model="stabilityai/stable-diffusion-2-inpainting",  # @param {type: "string"}
-                  sd_model = "runwayml/stable-diffusion-inpainting",  #@param {type: "string"}
+                 sd_model="stabilityai/stable-diffusion-2-inpainting",  # @param {type: "string"}
+#                  sd_model = "runwayml/stable-diffusion-inpainting",  #@param {type: "string"}
                  device=torch.device(  # "mps" if torch.backends.mps.is_available() else
                  "cuda" if torch.cuda.is_available() else "cpu"),
                  sd_device=torch.device("mps" if torch.backends.mps.is_available() else
@@ -340,9 +340,12 @@ class Inpainter(nn.Module):
         image = self.stable_pipe(self.prompt, image,
                                  # ImageOps only supports RGB
                                  ImageOps.invert(mask.convert("RGB")).convert("L"),
-                                 num_inference_steps=25).images[0]
+                                 num_inference_steps=25
+                                 ).images[0]
         # break
-        depth = self._get_depth(image, depth=depth, depth_mask=np.asarray(mask).reshape(depth.shape) > 0)
+        depth = self._get_depth(image, depth=depth, depth_mask=np.asarray(mask).reshape(depth.shape) > 0,
+                                iterations=500
+                                )
         return image, depth
 
 
