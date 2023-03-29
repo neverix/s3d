@@ -42,4 +42,4 @@ inpaint = gr.Interface(fn=step, inputs=[
     gr.components.Image(type="pil", label="image"),
     gr.components.Image(type="numpy", label="depth"),
 ])
-gr.TabbedInterface([starter, inpaint], ["Create a starting image", "Inpaint images"]).launch()
+gr.TabbedInterface([starter, inpaint], ["Create a starting image", "Inpaint images"]).launch(share=True)
