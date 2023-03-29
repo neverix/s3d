@@ -42,6 +42,7 @@ def get_image(mode="rgb"):
         links.new(map.outputs[0], invert.inputs[1])
         result = invert
         if mode == "alpha":
+            bpy.context.scene.render.film_transparent = True
             thresh = tree.nodes.new(type="CompositorNodeMath")
             thresh.operation = "GREATER_THAN"
             links.new(result.outputs[0], thresh.inputs[0])
@@ -220,13 +221,14 @@ class CompleteDepth(bpy.types.Operator):
                 mat.use_nodes = True
                 obj.data.materials.append(mat)
                 for n in mat.node_tree.nodes:
-                    tex = mat.node_tree.nodes.new("ShaderNodeTexImage")
-                    tex.image = rgb
-                    mat.node_tree.links.new(tex.outputs[0], n.inputs[0])
-                #    coord = mat.node_tree.nodes.new("ShaderNodeTexCoord")
-                #    coord.from_instancer = True
-                #    mat.node_tree.links.new(coord.outputs[2], tex.inputs[0])
-                    break
+                    if n.type == "OUTPUT_MATERIAL":
+                        tex = mat.node_tree.nodes.new("ShaderNodeTexImage")
+                        tex.image = rgb
+                        mat.node_tree.links.new(tex.outputs[0], n.inputs[0])
+                    #    coord = mat.node_tree.nodes.new("ShaderNodeTexCoord")
+                    #    coord.from_instancer = True
+                    #    mat.node_tree.links.new(coord.outputs[2], tex.inputs[0])
+                        break
                 uv_layer = bm.loops.layers.uv.new()
 #                tex_layer = bm.faces.layers.tex.new()
 #                uv_layer = bm.loops.layers.uv.get(uv_tex.name, False)
