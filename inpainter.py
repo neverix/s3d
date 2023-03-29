@@ -200,7 +200,7 @@ class ScaleAndShiftInvariantLoss(nn.Module):
 
 
 class MidasDepth(nn.Module):
-    def __init__(self, model_type="DPT_Large",
+    def __init__(self, model_type="DPT_BEiT_L_512",
                  device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                  is_inpainting=False):
         super().__init__()
