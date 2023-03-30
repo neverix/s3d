@@ -120,11 +120,12 @@ class S3D_Batch_PT_Panel(bpy.types.Panel):
     bl_category = "Tool"
     
     def draw(self, context):
-        rows = [self.layout.row() for _ in range(4)]
+        rows = [self.layout.row() for _ in range(5)]
         rows[0].prop(bpy.context.scene.s3d_settings, "gradio_addr")
         rows[1].prop(bpy.context.scene.s3d_settings, "script_path")
-        rows[2].prop(bpy.context.scene.s3d_settings, "run_for")
-        rows[3].operator("s3d.complete_batch")
+        rows[2].prop(bpy.context.scene.s3d_settings, "out_path")
+        rows[3].prop(bpy.context.scene.s3d_settings, "run_for")
+        rows[4].operator("s3d.complete_batch")
         for row in rows:
             row.enabled = not CompleteDepthBatch._running
 
@@ -139,6 +140,9 @@ class CompleteDepthBatch(bpy.types.Operator):
     
     _step = 0
     _prompts = []
+    _out_path = None
+    _template = None
+    _running = False
     
     def modal(self, context, event):
         if event.type == "TIMER":
@@ -146,19 +150,30 @@ class CompleteDepthBatch(bpy.types.Operator):
                 if self._step >= len(self._prompts):
                     self.__class__._running = False
                     return {"FINISHED"}
+                sanitized_name = "".join((c if c.isalnum() else "_") for c in self._prompts[self._step - 1])
+                bpy.ops.wm.save_as_mainfile(filepath=os.path.join(self._out_path, sanitized_name + ".blend"))
+                bpy.ops.wm.open_mainfile(filepath=self._template)
                 bpy.context.scene.s3d_settings.text = self._prompts[self._step]
                 bpy.ops.s3d.complete()
+#                raise ValueError(str(CompleteDepth._running))
                 self._step += 1
         return {"PASS_THROUGH"}
     
     def execute(self, context):
+        self.__class__._running = True
+        self._out_path = bpy.context.scene.s3d_settings.out_path
+        os.makedirs(self._out_path, exist_ok=True)
+        # Let's hope no one names a prompt "  template"!
+        self._template = os.path.join(self._out_path, "__template.blend")
+        bpy.ops.wm.save_as_mainfile(filepath=self._template)
 #        if self._running:
         wm = context.window_manager
-        self._timer = wm.event_timer_add(0.01, window=context.window)
+        self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
         self._step = 0
         self._prompts = open(bpy.context.scene.s3d_settings.script_path).read().split("\n")
-        self.__class__._running = True
+        import warnings
+        raise ValueError(len(self._prompts))
         return {"RUNNING_MODAL"}
 
 
@@ -357,6 +372,11 @@ class S3DSettings(bpy.types.PropertyGroup):
         name = "script path",
         default = "script.txt",
         subtype = "FILE_PATH"
+    )
+    out_path: bpy.props.StringProperty(
+        name = "output path",
+        default = "./out",
+        subtype = "DIR_PATH"
     )
 
 
