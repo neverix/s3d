@@ -28,7 +28,7 @@ def step(rgb, mask, depth, *args, **kwargs):
         depth = depth[..., 0]
     rgb, depth = inpainter.step(rgb.convert("RGB"), mask,
                                 # depth / 255. * 64.,
-                                depth / float(np.iinfo(depth.dtype).max),
+                                depth / float(np.iinfo(depth.dtype).max) * 64.,
                                 *args, **kwargs)
     return rgb, (depth.clip(0, 64) * 1024).astype("uint16")
 

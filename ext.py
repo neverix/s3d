@@ -39,11 +39,13 @@ def get_image(mode="rgb"):
 ##        map.max = [2 ** 16]
 #        links.new(rl.outputs[2 if mode == "depth" else 1], map.inputs[0])
         map = tree.nodes.new(type="CompositorNodeMath")
-#        map.operation = "DIVIDE"
-        map.operation = "MULTIPLY"
-#        map.inputs[0].default_value = 1024.0
-        map.inputs[0].default_value = 64.0
-        links.new(rl.outputs[2], map.inputs[1])
+        map.operation = "DIVIDE"
+#        map.operation = "MULTIPLY"
+        links.new(rl.outputs[2], map.inputs[0])
+#        map.inputs[1].default_value = 64.0 * 1024.0
+#        map.inputs[1].default_value = 1024.0
+        map.inputs[1].default_value = 64.0 * 4.0
+#        map.inputs[1].default_value = 1.0
         result = map
 #        invert = tree.nodes.new(type="CompositorNodeInvert")
 #        links.new(map.outputs[0], invert.inputs[1])
@@ -88,7 +90,7 @@ def b64dec(image, save_dir=os.path.join(
 
 
 def b64enc(image):
-    open(os.path.join(os.path.dirname(bpy.data.filepath), "depth.png"), "wb").write(image)
+    open(os.path.join(os.path.dirname(bpy.data.filepath), "tmp.png"), "wb").write(image)
     result = "data:image/png;base64," + base64.b64encode(image).decode("utf-8")
     return result    
 
@@ -99,17 +101,31 @@ class S3D_PT_Panel(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "Tool"
-    text_prop: bpy.props.StringProperty(
-        name = "text_prop",
-        default = "A fantasy dungeon"
-    )
     
     def draw(self, context):
-        self.layout.row().prop(bpy.context.scene.s3d_settings, "gradio_addr")
-        self.layout.row().prop(bpy.context.scene.s3d_settings, "text")
-        self.layout.row().prop(bpy.context.scene.s3d_settings, "run_for")
-        self.layout.row().operator("s3d.complete")
-        self.layout.enabled = not CompleteDepth._running
+        rows = [self.layout.row() for _ in range(4)]
+        rows[0].prop(bpy.context.scene.s3d_settings, "gradio_addr")
+        rows[1].prop(bpy.context.scene.s3d_settings, "text")
+        rows[2].prop(bpy.context.scene.s3d_settings, "run_for")
+        rows[3].operator("s3d.complete")
+#        for row in rows:
+#            row.enabled = not CompleteDepth._running
+
+class S3D_Batch_PT_Panel(bpy.types.Panel):
+    bl_label = "Depth completion"
+    bl_idname = "S3D_Batch_PT_Panel"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Tool"
+    
+    def draw(self, context):
+        rows = [self.layout.row() for _ in range(4)]
+        rows[0].prop(bpy.context.scene.s3d_settings, "gradio_addr")
+        rows[1].prop(bpy.context.scene.s3d_settings, "text")
+        rows[2].prop(bpy.context.scene.s3d_settings, "run_for")
+        rows[3].operator("s3d.complete")
+#        for row in rows:
+#            row.enabled = not CompleteDepth._running
 
 
 class CompleteDepth(bpy.types.Operator):
@@ -140,13 +156,14 @@ class CompleteDepth(bpy.types.Operator):
                 threading.Thread(target=fn, args=(
                                  context.scene.s3d_settings.text,
                                  rgb, alpha, depth)).start()
+                bpy.context.scene.frame_set(self._step)
                 self._state = 1
             elif self._state == 1:
                 if self._response is not None:
                     self._state = 2
             elif self._state == 2:
                 rgb, depth = self._response["data"]
-                (rgb, _), depth = b64dec(rgb), b64dec(depth)[-1][..., 0] * 64  # [..., 0].astype(np.float64)  # / 1024.
+                (rgb, _), depth = b64dec(rgb), b64dec(depth)[-1][..., 0] * 64.  # [..., 0].astype(np.float64)  # / 1024.
                 mask = depth > 1e-4
 
                 mesh = bpy.data.meshes.new("mesh")
@@ -259,21 +276,24 @@ class CompleteDepth(bpy.types.Operator):
 
                 bm.to_mesh(mesh)
                 bm.free()
-                self._state = 0
-                self._running = False
-                return {"FINISHED"}
+                if self._step >= context.scene.s3d_settings.run_for - 1:
+                    self._running = False
+                    return {"FINISHED"}
+                else:
+                    self._state = 0
+                    self._step += 1
         
         return {"PASS_THROUGH"}
 
     
     def execute(self, context):
-        if self._running:
-            return {"RUNNING_MODAL"}
+#        if self._running:
+#            return {"RUNNING_MODAL"}
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.01, window=context.window)
         wm.modal_handler_add(self)
         self._state = 0
-        self._step = 1
+        self._step = 0
         self._running = True
         return {"RUNNING_MODAL"}
 
@@ -293,7 +313,7 @@ class S3DSettings(bpy.types.PropertyGroup):
     )
     run_for: bpy.props.IntProperty(
         name = "complete for",
-        default = 8,
+        default = 1,
         min=1
     )
 
