@@ -177,8 +177,8 @@ class CompleteDepthBatch(bpy.types.Operator):
                     self.__class__._running = False
                     return {"FINISHED"}
                 sanitized_name = "".join((c if c.isalnum() else "_") for c in self._prompts[self._step - 1])
-#                bpy.ops.wm.save_as_mainfile(filepath=os.path.join(self._out_path, sanitized_name + ".blend"))
-#                bpy.ops.wm.open_mainfile(filepath=self._template)
+                bpy.ops.wm.save_as_mainfile(filepath=os.path.join(self._out_path, sanitized_name + ".blend"))
+                bpy.ops.wm.open_mainfile(filepath=self._template)
                 self.call_complete(context)
         return {"PASS_THROUGH"}
     
@@ -226,7 +226,10 @@ class CompleteDepth(bpy.types.Operator):
         try:
             if event.type == "TIMER":
                 if self._state == 0:
-                    rgb, alpha, depth = (b64enc(get_image(x)) for x in ("rgb", "alpha", "depth"))
+                    rgb, depth = (b64enc(get_image(x)) for x in ("rgb", "depth"))
+                    alpha = get_image("alpha")
+                    self._mask = np.asarray(alpha.pixels).reshape(alpha.size[1], alpha.size[0], -1)
+                    alpha = b64enc(alpha)
                     def fn(text, rgb, alpha, depth):
                         self._response = requests.post(os.path.join(
                             context.scene.s3d_settings.gradio_addr,
@@ -290,7 +293,7 @@ class CompleteDepth(bpy.types.Operator):
 
 
                     def try_get_vertex(bm, x, y):
-                        if not mask[y, x]:
+                        if not (mask[y, x] or self._mask[y, x] > 1e-4):
                             return None
                         
                         if (x, y) in vertices:
