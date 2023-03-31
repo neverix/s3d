@@ -340,7 +340,7 @@ class Inpainter(nn.Module):
         image = self.stable_pipe(self.prompt, image,
                                  # ImageOps only supports RGB
                                  ImageOps.invert(mask.convert("RGB")).convert("L"),
-                                 num_inference_steps=25
+                                 num_inference_steps=24
                                  ).images[0]
         # break
         depth = self._get_depth(image, depth=depth, depth_mask=np.asarray(mask).reshape(depth.shape) > 0,

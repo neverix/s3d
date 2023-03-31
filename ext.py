@@ -4,6 +4,7 @@ import numpy as np
 import threading
 import requests
 import tempfile
+import random
 import base64
 import bmesh
 import json
@@ -144,37 +145,68 @@ class CompleteDepthBatch(bpy.types.Operator):
     _template = None
     _running = False
     
+    def call_complete(self, context):
+        bpy.context.scene.s3d_settings.text = self._prompts[self._step]
+        window = context.window
+        screen = window.screen
+        views_3d = sorted(
+                [a for a in screen.areas if a.type == 'VIEW_3D'],
+                key=lambda a: (a.width * a.height))
+        assert views_3d
+        a = views_3d[0]
+        # override
+        o = {"window" : window,
+             "screen" : screen,
+             "area" : a,
+             "space_data": a.spaces.active,
+             "region" : a.regions[-1]
+         }
+        bpy.ops.s3d.complete(o)  # "INVOKE_DEFAULT")
+        self._step += 1
+    
     def modal(self, context, event):
+#        self.__class__._running = False
+        if not CompleteDepth._running or random.random() < 0.01:
+            self.report({"INFO"}, str(CompleteDepth._running))
+#        return {"FINISHED"}
         if event.type == "TIMER":
             if not CompleteDepth._running:
+                self.report({"INFO"}, f"{self._step} {len(self._prompts)}")
                 if self._step >= len(self._prompts):
+                    self.report({"INFO"}, str(CompleteDepth._running))
                     self.__class__._running = False
                     return {"FINISHED"}
                 sanitized_name = "".join((c if c.isalnum() else "_") for c in self._prompts[self._step - 1])
-                bpy.ops.wm.save_as_mainfile(filepath=os.path.join(self._out_path, sanitized_name + ".blend"))
-                bpy.ops.wm.open_mainfile(filepath=self._template)
-                bpy.context.scene.s3d_settings.text = self._prompts[self._step]
-                bpy.ops.s3d.complete()
-#                raise ValueError(str(CompleteDepth._running))
-                self._step += 1
+#                bpy.ops.wm.save_as_mainfile(filepath=os.path.join(self._out_path, sanitized_name + ".blend"))
+#                bpy.ops.wm.open_mainfile(filepath=self._template)
+                self.call_complete(context)
         return {"PASS_THROUGH"}
     
     def execute(self, context):
+#        bpy.ops.s3d.complete("INVOKE_DEFAULT")
+#        return {"FINISHED"}
+#        if self.__class__._running:
+#            return {"RUNNING_MODAL"}
         self.__class__._running = True
         self._out_path = bpy.context.scene.s3d_settings.out_path
         os.makedirs(self._out_path, exist_ok=True)
         # Let's hope no one names a prompt "  template"!
         self._template = os.path.join(self._out_path, "__template.blend")
         bpy.ops.wm.save_as_mainfile(filepath=self._template)
-#        if self._running:
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.05, window=context.window)
         wm.modal_handler_add(self)
         self._step = 0
         self._prompts = open(bpy.context.scene.s3d_settings.script_path).read().split("\n")
-        import warnings
-        raise ValueError(len(self._prompts))
+#        return {"FINISHED"}
+        self.call_complete(context)
+        self.report({"INFO"}, str(CompleteDepth._running))
         return {"RUNNING_MODAL"}
+
+    def cancel(self, context):
+        wm = context.window_manager
+        wm.event_timer_remove(self._timer)
+        self.__class__._running = False
 
 
 class CompleteDepth(bpy.types.Operator):
@@ -352,6 +384,7 @@ class CompleteDepth(bpy.types.Operator):
     def cancel(self, context):
         wm = context.window_manager
         wm.event_timer_remove(self._timer)
+        self.__class__._running = False
 
 
 class S3DSettings(bpy.types.PropertyGroup):
